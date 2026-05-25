@@ -29,7 +29,7 @@ IFS=$'\n\t' # Handle spaces in filenames
 
 # Script Constants >>>
 
-VERSION=1.0.0
+VERSION=1.1.0
 
 # Installation paths and names
 GROUP_NAME="loon-env-users"
@@ -362,7 +362,7 @@ parse_zed_version(){
 #######################################
 get_zed_daemon_status(){
     # if we are in a container we don't have systemctl so we have to use the command directly
-    if [[ $(in_container) == true ]]; then
+    if in_container; then
         local output=$(sudo /usr/local/zed/zed_x_daemon --status 2>&1 || echo "offline")
         if [[ "$output" == *"online"* ]]; then
             echo "online"
@@ -394,7 +394,7 @@ get_zed_daemon_status(){
 restart_zed_daemon(){
     log "Attempting to restart Zed Daemon..."
     # if we are in a container we don't have systemctl so we have to use the command directly
-    if [[ $(in_container) == true ]]; then
+    if in_container; then
         run "sudo /usr/local/zed/zed_x_daemon --restart"
         return
     else
@@ -679,18 +679,19 @@ in_container() {
 ################################
 build_colcon(){
     local service="${1:-loone}"
-    if [[ $(in_container) == 0 ]]; then
+    log "Starting colcon build for service: $BLUE $service $PRIMARY..."
+    if in_container; then
         log "Running build commands for container environment..."
 
         if [[ "$service" == "loone" ]]; then
             log "Running build commands for LoonE service..."
             # it's the same rn but we might want different build args for the zed workspace in the future
             # so keeping it separate for now
-            run /bin/bash -c "source /opt/ros/humble/setup.bash && \
-            apt-get update && \
-            rosdep update && \
-            rosdep install --from-paths src --ignore-src -r -y && \
-            colcon build --parallel-workers 4 --symlink-install \
+            run '/bin/bash -c "source /opt/ros/humble/setup.bash"'
+            run 'apt-get update'
+            run 'rosdep update'
+            run 'rosdep install --from-paths src --ignore-src -r -y'
+            run "colcon build --parallel-workers 4 --symlink-install \
                 --event-handlers console_direct+ \
                 --base-paths src \
                 --cmake-clean-cache \
