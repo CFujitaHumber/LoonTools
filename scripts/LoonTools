@@ -41,6 +41,7 @@ LOONE_SOURCE=$SCRIPTS_SOURCE/LoonE
 ASSETS_DIR="./src/assets"
 WORKSPACE_DIR="$HOME/LoonE_ws"
 GROUP_NAME="loon-env-users"
+LOCKFILE="${LOCKFILE:-/tmp/LoonTools.lock}"
 
 
 # Colors for stdout
@@ -79,13 +80,13 @@ REQUIRED_VARIABLES=(
     ["RMW_IMPLEMENTATION"]="rmw_cyclonedds_cpp"
     ["ROS_DOMAIN_ID"]="0"
     ["ROS_LOCALHOST_ONLY"]="0"
-    ["ZED_SDK_VERSION"]="5.1.0"
-    ["L4T_VERSION"]="36.4.2"
+    ["ZED_SDK_VERSION"]='5.1.2'
+    ["L4T_VERSION"]='R36.4.7'
     ["ROS_DISTRO"]="humble"
-    ["XAUTHORITY"]="/home/$USER/.Xauthority"
+    ["XAUTHORITY"]="/home/$(whoami)/.Xauthority"
 )
 
-#################################
+# #################################
 # Dictionary to track variable status
 # Globals:
 # REQUIRED_VARIABLES
@@ -94,8 +95,9 @@ REQUIRED_VARIABLES=(
 #   "variable"="status"
 # Dictionary value types:
 #   $MISSING | $INVALID | $VALID | $NOT_CHECKED
-#################################
-declare -a REQUIRED_VARIABLE_STATUS
+# #################################
+declare -A REQUIRED_VARIABLE_STATUS
+# set all keys to not checked initially
 for key in "${!REQUIRED_VARIABLES[@]}"; do
     REQUIRED_VARIABLE_STATUS["$key"]="$NOT_CHECKED"
 done
@@ -134,7 +136,7 @@ CORRECT_FILE_STRUCTURE=(
 #   $MISSING | $INVALID | $VALID | $NOT_CHECKED
 #########################################
 declare -A FILE_STRUCTURE_STATUS
-for key in "${CORRECT_FILE_STRUCTURE_KEYS[@]}"; do
+for key in "${!CORRECT_FILE_STRUCTURE[@]}"; do
     FILE_STRUCTURE_STATUS["$key"]="$NOT_CHECKED"
 done
 
@@ -147,7 +149,7 @@ done
 # Dictionary value types:
 #  $VALID | $MISSING | $NOT_CHECKED
 #########################################
-declare -A required_commands
+declare -A REQUIRED_COMMANDS
 REQUIRED_COMMANDS=(
     ["apt-get"]="$NOT_CHECKED"
     ["ca-certificates"]="$NOT_CHECKED"
@@ -166,7 +168,7 @@ REQUIRED_COMMANDS=(
 # <<< Script Constants
 
 # Script Arguments >>>
-SHIFT_ARGS_BY=0 # Used for shifting arguements
+SHIFT_ARGS_BY=1 # Used for shifting arguments
 VERBOSE=0 # Verbose mode
 DRY_RUN=0 # Dry running (debug)
 
@@ -341,12 +343,13 @@ cleanup() {
 # Globals:
 # Arguments:
 #   None
-# Returns:
+# Outputs:
 # x.x.x version detected or nothing
 #######################################
 parse_zed_version(){
-    local ZED_VERSION=$(sudo cat /usr/local/zed/zed-config-version.cmake | grep "set(PACKAGE_VERSION \"" | sed -E 's/set\(PACKAGE_VERSION "(.*)"\)/\1/')
-    return $ZED_VERSION
+    local ZED_VERSION
+    ZED_VERSION=$(sudo grep 'set(PACKAGE_VERSION "' /usr/local/zed/zed-config-version.cmake 2>/dev/null | sed -E 's/set\(PACKAGE_VERSION "(.*)"\)/\1/')
+    echo "$ZED_VERSION"
 }
 
 #######################################
@@ -441,7 +444,9 @@ check_zed_daemon(){
 # 0 - it does not match
 # 1 - it does match
 #######################################
-check_MTU(){}
+check_MTU(){
+    warn "not implemented yet, skipping MTU check..."
+}
 
 # <<< Zed Utility Functions
 
@@ -452,14 +457,14 @@ check_MTU(){}
 # Globals:
 # Arguments:
 #   None
-# Returns:
-# x.x.x version detected or nothing
+# Outputs:
+# echo Rx.x.x version detected or nothing
 #######################################
 parse_l4t_version(){
-    local L4T_VERSION="$(sed -n 's/^# \(R[0-9]\+\).*, REVISION: \([0-9.]\+\).*/\1.\2/p' /etc/nv_tegra_release 2>/dev/null || echo "unknown")"
-    return $L4T_VERSION
+    local L4T_VERSION
+    L4T_VERSION="$(sed -n 's/^# \(R[0-9]\+\).*, REVISION: \([0-9.]\+\).*/\1.\2/p' /etc/nv_tegra_release 2>/dev/null || echo "unknown")"
+    echo "$L4T_VERSION"
 }
-
 
 # <<< L4T Utility Functions
 
@@ -475,7 +480,9 @@ parse_l4t_version(){
 # 0 - system does not allow port forwarding
 # 1- system does
 #######################################
-can_forward_x11(){}
+can_forward_x11(){
+    warn "not implemented yet, skipping X11 forwarding check..."
+}
 
 
 # <<< X11 Utility Functions
@@ -750,11 +757,11 @@ EOF
 # Nothing
 #######################################
 parse_runtime_arguments() {
-    while [[ $# -gt 0 ]]; do
+    while [[ $# -gt $(($SHIFT_ARGS_BY - 1)) ]]; do
         case "$1" in
             -v|--verbose)
                 VERBOSE=1
-                log Yapping mode activiated!
+                log 'Yapping mode activiated!'
                 SHIFT_ARGS_BY=$((SHIFT_ARGS_BY + 1))
                 shift
                 ;;
@@ -799,6 +806,7 @@ parse_functional_arguments(){
             -c|--colcon)
             build_colcon
             exit 0
+            ;;
         *)
             error "Unknown function $1"
             exit 1;
@@ -810,7 +818,7 @@ parse_functional_arguments(){
 
 # >>> MAIN <<< #
 main () {
-    parse_arguments $@
+    parse_runtime_arguments $@
     
     log "Checking for existing installation lock..."
 
