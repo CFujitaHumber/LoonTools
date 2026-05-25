@@ -435,6 +435,7 @@ enter() {
                     exit 1
                 fi
                 echo "Entering ZED wrapper service container..."
+                echo "Maintenance commands inside this container use sudo."
                 run "docker exec -it $ZED_CONTAINER_NAME bash"
                 exit 0 # Exit after entering the first valid container to avoid trying to enter multiple containers in one command
                 ;;

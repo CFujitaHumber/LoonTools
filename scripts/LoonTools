@@ -683,42 +683,20 @@ build_colcon(){
     if in_container; then
         log "Running build commands for container environment..."
 
+        repair_dpkg_state() {
+            if sudo grep -qE '(^|[[:space:]])plocate([[:space:]]|$)' /var/lib/dpkg/statoverride 2>/dev/null; then
+                printf '[INFO] Repairing stale dpkg-statoverride entry for plocate\n'
+                sudo sed -i.bak '/[[:space:]]plocate[[:space:]]/d' /var/lib/dpkg/statoverride
+            fi
+        }
+        local build_command='source /opt/ros/humble/setup.bash && repair_dpkg_state && sudo apt-get update && rosdep update && repair_dpkg_state && sudo rosdep install --from-paths src --ignore-src -r -y && for d in /home/robo/ros2_ws /home/robo/loone_ws /home/robo/zed_ws; do [ -d "$d" ] && sudo chown -R robo:robo "$d"; done && export ZED_DIR=/usr/local/zed && export CMAKE_PREFIX_PATH=/usr/local:/usr/local/zed:$CMAKE_PREFIX_PATH && sudo chown -R root:zed /usr/local/zed || true && sudo chmod -R g+rX /usr/local/zed || true && colcon build --parallel-workers 4 --symlink-install --event-handlers console_direct+ --base-paths src --cmake-clean-cache --cmake-args -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH=/usr/local -DZED_SDK_ROOT=/usr/local/zed -DCMAKE_LIBRARY_PATH=/usr/local/cuda/lib64/stubs -DCMAKE_CXX_FLAGS="-Wl,--allow-shlib-undefined" --no-warn-unused-cli && sudo rm -rf /var/lib/apt/lists/*'
+
         if [[ "$service" == "loone" ]]; then
             log "Running build commands for LoonE service..."
-            # it's the same rn but we might want different build args for the zed workspace in the future
-            # so keeping it separate for now
-            run '/bin/bash -c "source /opt/ros/humble/setup.bash"'
-            run 'apt-get update'
-            run 'rosdep update'
-            run 'rosdep install --from-paths src --ignore-src -r -y'
-            run "colcon build --parallel-workers 4 --symlink-install \
-                --event-handlers console_direct+ \
-                --base-paths src \
-                --cmake-clean-cache \
-                --cmake-args \
-                -DCMAKE_BUILD_TYPE=Release \
-                -DZED_SDK_ROOT=/usr/local/zed \
-                -DCMAKE_LIBRARY_PATH=/usr/local/cuda/lib64/stubs \
-                -DCMAKE_CXX_FLAGS=\"-Wl,--allow-shlib-undefined\" \
-                --no-warn-unused-cli && \
-            rm -rf /var/lib/apt/lists/*"
+            run "${build_command}"
         elif [[ "$service" == "zed" ]]; then
             log "Running build commands for ZedX service..."
-            run /bin/bash -c "source /opt/ros/humble/setup.bash && \
-            apt-get update && \
-            rosdep update && \
-            rosdep install --from-paths src --ignore-src -r -y && \
-            colcon build --parallel-workers 4 --symlink-install \
-                --event-handlers console_direct+ \
-                --base-paths src \
-                --cmake-clean-cache \
-                --cmake-args \
-                -DCMAKE_BUILD_TYPE=Release \
-                -DZED_SDK_ROOT=/usr/local/zed \
-                -DCMAKE_LIBRARY_PATH=/usr/local/cuda/lib64/stubs \
-                -DCMAKE_CXX_FLAGS=\"-Wl,--allow-shlib-undefined\" \
-                --no-warn-unused-cli && \
-            rm -rf /var/lib/apt/lists/*"
+            run "${build_command}"
         else # not a valid service
             error "Unknown service: $BLUE $service $PRIMARY. Valid options are 'loone' or 'zed'."
             exit 1
