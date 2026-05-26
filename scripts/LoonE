@@ -122,6 +122,10 @@ run() {
     fi
 }
 
+prepare_runtime_env() {
+    export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/tmp/xdg-runtime-robo}"
+}
+
 ################################
 # Parses service targets from command-line arguments
 # Globals:
@@ -339,6 +343,7 @@ version() {
 ###############################
 start() {
     log "Received start command with arguments: $*"
+    prepare_runtime_env
     target_services "$@"
     log "Target services to start: ${SERVICES[*]}"
     for service in "${SERVICES[@]}"; do
@@ -470,6 +475,7 @@ enter() {
 ##################################
 build() {
     log "Received build command with arguments: $*"
+    prepare_runtime_env
     local profile=""
     local with_cache=1
 

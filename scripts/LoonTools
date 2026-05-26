@@ -690,6 +690,58 @@ repair_dpkg_state() {
         sudo sed -i.bak '/[[:space:]]plocate[[:space:]]/d' /var/lib/dpkg/statoverride
     fi
 }
+
+validate_cyclonedds_uri() {
+    local cyclonedds_uri="${CYCLONEDDS_URI:-}"
+    if [[ -z "$cyclonedds_uri" ]]; then
+        printf '[INFO] CYCLONEDDS_URI is unset; DDS will use its default configuration\n'
+        return 0
+    fi
+
+    if [[ "$cyclonedds_uri" != file://* ]]; then
+        printf '[WARN] CYCLONEDDS_URI is set to a non-file URI: %s\n' "$cyclonedds_uri"
+        return 0
+    fi
+
+    local cyclonedds_path="${cyclonedds_uri#file://}"
+    if [[ ! -r "$cyclonedds_path" ]]; then
+        printf '[WARN] CYCLONEDDS_URI points to an unreadable file: %s\n' "$cyclonedds_path"
+        printf '[WARN] Expected mounted path for this workspace is /home/robo/cyclonedds.xml\n'
+        return 1
+    fi
+
+    printf '[INFO] Found readable CycloneDDS config at %s\n' "$cyclonedds_path"
+}
+
+ensure_runtime_dir() {
+    local runtime_dir="${XDG_RUNTIME_DIR:-/tmp/xdg-runtime-robo}"
+    if [[ ! -d "$runtime_dir" ]]; then
+        sudo mkdir -p "$runtime_dir"
+    fi
+    sudo chown robo:robo "$runtime_dir"
+    sudo chmod 700 "$runtime_dir"
+}
+
+validate_large_message_tuning() {
+    local rmem_default
+    local rmem_max
+    local ipfrag_time
+    local ipfrag_high_thresh
+
+    rmem_default=$(cat /proc/sys/net/core/rmem_default 2>/dev/null || echo 0)
+    rmem_max=$(cat /proc/sys/net/core/rmem_max 2>/dev/null || echo 0)
+    ipfrag_time=$(cat /proc/sys/net/ipv4/ipfrag_time 2>/dev/null || echo 0)
+    ipfrag_high_thresh=$(cat /proc/sys/net/ipv4/ipfrag_high_thresh 2>/dev/null || echo 0)
+
+    printf '[INFO] Network tuning: rmem_default=%s rmem_max=%s ipfrag_time=%s ipfrag_high_thresh=%s\n' \
+        "$rmem_default" "$rmem_max" "$ipfrag_time" "$ipfrag_high_thresh"
+
+    if [[ "$rmem_max" -lt 2147483647 || "$ipfrag_time" -gt 3 || "$ipfrag_high_thresh" -lt 134217728 ]]; then
+        printf '[WARN] Large-message DDS tuning is below the recommended host profile for ZED image/point-cloud traffic\n'
+        printf '[WARN] Apply the profile on the host with sudo %s or the Loon-Env installer, not inside the container\n' "/usr/sbin/sysctl -p /etc/sysctl.d/60-loon-env-buffers.conf"
+        printf '[WARN] Recommended: sudo sysctl -w net.core.rmem_max=2147483647 net.ipv4.ipfrag_time=3 net.ipv4.ipfrag_high_thresh=134217728\n'
+    fi
+}
 ################################
 # Attempts to build colcon workspace
 # Globals:
@@ -705,7 +757,7 @@ build_colcon(){
         log "Running build commands for container environment..."
 
         
-        local build_command='source /opt/ros/humble/setup.bash && repair_dpkg_state && sudo apt-get update && rosdep update && repair_dpkg_state && sudo rosdep install --from-paths src --ignore-src -r -y && for d in /home/robo/ros2_ws /home/robo/loone_ws /home/robo/zed_ws; do [ -d "$d" ] && sudo chown -R robo:robo "$d"; done && export ZED_DIR=/usr/local/zed && export CMAKE_PREFIX_PATH=/usr/local:/usr/local/zed:$CMAKE_PREFIX_PATH && sudo chown -R root:zed /usr/local/zed || true && sudo chmod -R g+rX /usr/local/zed || true && colcon build --parallel-workers 4 --symlink-install --event-handlers console_direct+ --base-paths src --cmake-clean-cache --cmake-args -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH=/usr/local -DZED_SDK_ROOT=/usr/local/zed -DCMAKE_LIBRARY_PATH=/usr/local/cuda/lib64/stubs -DCMAKE_CXX_FLAGS="-Wl,--allow-shlib-undefined" --no-warn-unused-cli && sudo rm -rf /var/lib/apt/lists/*'
+        local build_command='source /opt/ros/humble/setup.bash && repair_dpkg_state && validate_cyclonedds_uri && validate_large_message_tuning && ensure_runtime_dir && sudo apt-get update && rosdep update && repair_dpkg_state && sudo rosdep install --from-paths src --ignore-src -r -y && for d in /home/robo/ros2_ws /home/robo/loone_ws /home/robo/zed_ws; do [ -d "$d" ] && sudo chown -R robo:robo "$d"; done && export ZED_DIR=/usr/local/zed && export CMAKE_PREFIX_PATH=/usr/local:/usr/local/zed:$CMAKE_PREFIX_PATH && sudo chown -R root:zed /usr/local/zed || true && sudo chmod -R g+rX /usr/local/zed || true && colcon build --parallel-workers 4 --symlink-install --event-handlers console_direct+ --base-paths src --cmake-clean-cache --cmake-args -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH=/usr/local -DZED_SDK_ROOT=/usr/local/zed -DCMAKE_LIBRARY_PATH=/usr/local/cuda/lib64/stubs -DCMAKE_CXX_FLAGS="-Wl,--allow-shlib-undefined" --no-warn-unused-cli && sudo rm -rf /var/lib/apt/lists/*'
 
         if [[ "$service" == "loone" ]]; then
             log "Running build commands for LoonE service..."
